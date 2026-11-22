@@ -3,8 +3,9 @@ package writers
 import (
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
 )
 
 func CreateNewOutputFile(projectId string, filename string) *os.File {
@@ -18,6 +19,9 @@ func CreateNewOutputFile(projectId string, filename string) *os.File {
 	}
 	var handle *os.File
 	var outputFilepath string
+	// Sufijo con fecha y hora: cada descarga queda como un archivo nuevo y no
+	// pisa la anterior, así se pueden comparar exportaciones en el tiempo.
+	filename += "-" + time.Now().Format("20060102-150405")
 	if common.UseCsv {
 		outputFilepath = filepath.Join(common.OutputDir, projectId, filename+".csv")
 	} else {
@@ -36,8 +40,7 @@ func CreateNewOutputFile(projectId string, filename string) *os.File {
 func WriteObjectToFile(handle *os.File, element map[string]interface{}) {
 	common.PrintVerbose("Writing object to output file '" + handle.Name() + "'")
 	if common.UseCsv {
-		// TODO: implement this
-		//writeObjectToCsvFile(handle, element)
+		writeToCsvFile(handle, []map[string]interface{}{element})
 	} else {
 		writeObjectToJsonFile(handle, element)
 	}
@@ -46,8 +49,7 @@ func WriteObjectToFile(handle *os.File, element map[string]interface{}) {
 func WriteArrayToFile(handle *os.File, elements []map[string]interface{}) {
 	common.PrintVerbose("Writing array to output file '" + handle.Name() + "'")
 	if common.UseCsv {
-		// TODO: implement this
-		//writeArrayToCsvFile(handle, elements)
+		writeToCsvFile(handle, elements)
 	} else {
 		writeArrayToJsonFile(handle, elements)
 	}

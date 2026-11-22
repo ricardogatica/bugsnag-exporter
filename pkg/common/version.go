@@ -1,6 +1,6 @@
 package common
 
 /*
-	The version of this application
+The version of this application
 */
-const PackageVersion string = "0.0.1"
+const PackageVersion string = "0.1.0"

@@ -3,8 +3,8 @@ package daa
 import (
 	"os"
 
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
-	"github.com/xander-jones/bugsnag-exporter/pkg/writers"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/writers"
 )
 
 func GetProjectErrors(projectId string, filters string) []map[string]interface{} {

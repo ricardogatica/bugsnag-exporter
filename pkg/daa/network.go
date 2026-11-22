@@ -10,9 +10,10 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
 )
 
 type BugsnagDAAResponse struct {
@@ -57,11 +58,11 @@ var client = &http.Client{}
 var PersonalAuthToken = "" // Personal Auth Token "Go-API"
 
 /*
-	Makes repeat calls to the Bugsnag Data Access API to fetch data, following
-	`next` links until there are no more links to follow.
+Makes repeat calls to the Bugsnag Data Access API to fetch data, following
+`next` links until there are no more links to follow.
 
-	This function is only used if the expected response is going to be an array,
-	else use BugsnagGetObject()
+This function is only used if the expected response is going to be an array,
+else use BugsnagGetObject()
 */
 func BugsnagGetArray(url string) []map[string]interface{} {
 	var thisCallNo int = 0
@@ -73,8 +74,9 @@ func BugsnagGetArray(url string) []map[string]interface{} {
 		thisCallNo += 1
 		res = MakeBugsnagDAAGet(url)
 		if res.status == 429 {
-			common.Print("API rate limit reached: Sleeping for %d seconds", res.retryAfter)
-			time.Sleep(time.Duration(res.retryAfter) * time.Second)
+			thisCallNo -= 1 // el reintento no es una página nueva
+			common.Print("API rate limit reached: Sleeping for %d seconds", retryDelay(res.retryAfter))
+			time.Sleep(time.Duration(retryDelay(res.retryAfter)) * time.Second)
 		} else if res.status == 200 {
 			var unmarshallBody []map[string]interface{}
 			err := json.Unmarshal([]byte(res.body), &unmarshallBody)
@@ -121,19 +123,21 @@ func calcCallsRemaining(elementsDownloaded int, totalElementsToDownload int, ele
 }
 
 /*
-	Makes call to the Bugsnag Data Access API to fetch data, this won't return
-	a `next` link as this should be a single object only, not an array
+Makes call to the Bugsnag Data Access API to fetch data, this won't return
+a `next` link as this should be a single object only, not an array
 
-	To get an array of elements, use BugsnagGetArray()
+To get an array of elements, use BugsnagGetArray()
 */
 func BugsnagGetObject(url string) map[string]interface{} {
 	var res BugsnagDAAResponse
 	var element map[string]interface{}
 	res = MakeBugsnagDAAGet(url)
-	if res.status == 429 {
-		common.Print("API rate limit reached: Sleeping for %d seconds", res.retryAfter)
-		time.Sleep(time.Duration(res.retryAfter) * time.Second)
-	} else if res.status == 200 {
+	for res.status == 429 {
+		common.Print("API rate limit reached: Sleeping for %d seconds", retryDelay(res.retryAfter))
+		time.Sleep(time.Duration(retryDelay(res.retryAfter)) * time.Second)
+		res = MakeBugsnagDAAGet(url)
+	}
+	if res.status == 200 {
 		err := json.Unmarshal([]byte(res.body), &element)
 		if err != nil {
 			common.ExitWithErrorAndString(1, err, "JSON Unmarshalling failed")
@@ -147,10 +151,13 @@ func BugsnagGetObject(url string) map[string]interface{} {
 }
 
 /*
-	Makes a single call to the Bugsnag Data Access API based on the url provided. When
-		the data rate limit is reached, backs off until it can continue making calls.
-	Returns a `BugsnagDAAResponse` object which contains important headers, and the
-		marshalled JSON body (in []byte form)
+Makes a single call to the Bugsnag Data Access API based on the url provided. When
+
+	the data rate limit is reached, backs off until it can continue making calls.
+
+Returns a `BugsnagDAAResponse` object which contains important headers, and the
+
+	marshalled JSON body (in []byte form)
 */
 func MakeBugsnagDAAGet(url string) BugsnagDAAResponse {
 	var response BugsnagDAAResponse
@@ -160,12 +167,14 @@ func MakeBugsnagDAAGet(url string) BugsnagDAAResponse {
 		log.Fatalln(err)
 	}
 	req.Header.Add("Authorization", "token "+PersonalAuthToken)
+	req.Header.Add("X-Version", "2")
 
 	res, err := client.Do(req)
 	if err != nil {
 		common.ExitWithError(1000, err)
 	}
 
+	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		common.ExitWithError(1000, err)
@@ -197,8 +206,8 @@ func MakeBugsnagDAAGet(url string) BugsnagDAAResponse {
 }
 
 /*
-	Parse a header string number into an int, throwing an error if an
-	integer conversion does not succeed. Returns -1 if the header is empty
+Parse a header string number into an int, throwing an error if an
+integer conversion does not succeed. Returns -1 if the header is empty
 */
 func parseHeaderInt(headerValuesArray []string) int {
 	canonicalHeader := canonicalHeader(headerValuesArray)
@@ -216,9 +225,9 @@ func parseHeaderInt(headerValuesArray []string) int {
 }
 
 /*
-	Returns the first element in the headers array. Any more than one header for the ones
-	we care about would be unexpected, so just return the first.
-	If the array is empty, just return an empty string
+Returns the first element in the headers array. Any more than one header for the ones
+we care about would be unexpected, so just return the first.
+If the array is empty, just return an empty string
 */
 func canonicalHeader(headerValuesArray []string) string {
 	if len(headerValuesArray) > 0 {
@@ -229,18 +238,35 @@ func canonicalHeader(headerValuesArray []string) string {
 }
 
 /*
-	Extract the next link and which direction it goes in relation to the current URL
+Extrae el link `rel="next"` del header Link. El header puede traer varios
+links (next, prev, first...) en cualquier orden; antes se tomaba solo el
+primero, así que si venía `prev` primero la paginación se cortaba, y si no
+había coincidencias el programa entraba en panic.
 */
-// TODO: make understand links like:
-// {https://api.bugsnag.com/organizations/5919dd35488ed9001b53f3c3/projects?direction=desc&offset%!B(MISSING)null_sort_field%!D(MISSING)=false&offset%!B(MISSING)sort_field_offset%!D(MISSING)=60ab55a5c4fdc30014952c68&per_page=30&sort=created_at>; rel="next",<https://api.bugsnag.com/organizations/5919dd35488ed9001b53f3c3/projects?direction=desc&per_page=30&sort=created_at prev}
 func parseHeaderNext(headerValuesArray []string) BugsnagDAANextLink {
-	header := canonicalHeader(headerValuesArray)
 	var rtn BugsnagDAANextLink
-	if len(header) > 0 {
-		r, _ := regexp.Compile("<(https://api.bugsnag.com/[^\"]*)>; rel=\"(next|prev)\"")
-		matches := r.FindAllStringSubmatch(header, -1)
-		rtn.url = matches[0][1]
-		rtn.rel = matches[0][2]
+	header := strings.Join(headerValuesArray, ",")
+	if header == "" {
+		return rtn
+	}
+	r := regexp.MustCompile(`<([^>]+)>\s*;\s*rel="([^"]+)"`)
+	for _, m := range r.FindAllStringSubmatch(header, -1) {
+		if m[2] == "next" {
+			rtn.url = m[1]
+			rtn.rel = "next"
+			return rtn
+		}
 	}
 	return rtn
+}
+
+/*
+Segundos a esperar tras un 429. Si la API no manda Retry-After, espera 60s
+(la ventana del rate limit) en vez de reintentar en un loop sin pausa.
+*/
+func retryDelay(retryAfter int) int {
+	if retryAfter <= 0 {
+		return 60
+	}
+	return retryAfter
 }

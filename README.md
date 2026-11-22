@@ -1,9 +1,44 @@
 # bugsnag-exporter
 
-![Go Workflow](https://github.com/xander-jones/bugsnag-exporter/actions/workflows/go.yml/badge.svg)
-![Latest Stable Version](https://img.shields.io/github/v/release/xander-jones/bugsnag-exporter)
+![Go Workflow](https://github.com/ricardogatica/bugsnag-exporter/actions/workflows/go.yml/badge.svg)
 
 Tool for extracting data from Bugsnag's Data Access API and turning it into a JSON or CSV file.
+
+Fork de [xljones/bugsnag-exporter](https://github.com/xljones/bugsnag-exporter).
+
+## Uso rápido (español)
+
+```sh
+go build -o bugsnag-exporter .
+cp .env.example .env          # y pega tu BUGSNAG_TOKEN
+
+# 1. Listar organizaciones y proyectos (con sus IDs)
+./bugsnag-exporter
+
+# 2. Errores de un proyecto en producción de los últimos 7 días
+./bugsnag-exporter --project-id PROJECT_ID --since 7d --release-stage production --no-warn
+
+# 3. Eventos (ocurrencias, con stacktrace y metadata) de un error puntual
+./bugsnag-exporter --project-id PROJECT_ID --error-id ERROR_ID --events --since 7d --no-warn
+```
+
+Los archivos quedan en `./data/<project_id>/` con fecha y hora en el nombre, así que
+una descarga nueva no pisa la anterior.
+
+**Token:** es un *Personal Auth Token* de tu usuario, no la API key del proyecto (esa
+solo sirve para enviar errores). Se genera en
+[My account → Personal auth tokens](https://app.bugsnag.com/settings/my-account).
+Se lee de `BUGSNAG_TOKEN` o del archivo `.env` (ignorado por git); evita `--token`
+porque queda en el historial del shell.
+
+### Cambios respecto al original
+
+- Ya no reporta sesiones/errores al proyecto Bugsnag del autor original (traía una API key fija).
+- Paginación correcta: sigue el link `rel="next"` aunque el header `Link` traiga `prev` primero, y no hace panic si no hay coincidencias.
+- Reintenta tras un 429 también al pedir objetos individuales; sin `Retry-After` espera 60 s.
+- Envía `X-Version: 2` y pide `per_page=100` (menos llamadas a la API).
+- `--since` y `--release-stage` como atajos de filtros; `--csv` ahora sí escribe el CSV.
+- Sin `--project-id` lista los proyectos (antes exigía `--show-project-ids`).
 
 :warning: **Work In Progress.**
 
@@ -71,7 +106,7 @@ Usage of /var/folders/j3/gpggwqd53wj_z5mhtn9yf2t40000gn/T/go-build962128733/b001
 #### Get a list of projects accessible for your API token
 
 ```
-$ ./bugsnag-exporter --token TOKEN 
+$ BUGSNAG_TOKEN=TOKEN ./bugsnag-exporter
 ```
 
 #### JSON or CSV

@@ -1,23 +1,65 @@
 package writers
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
+	"sort"
 
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
 )
 
+/*
+Escribe los elementos como CSV: una fila por elemento y una columna por cada
+llave de primer nivel (la unión de todas, ordenadas). Los valores anidados
+(objetos y arreglos) se guardan como JSON dentro de la celda.
+*/
 func writeToCsvFile(handle *os.File, elements []map[string]interface{}) {
-	// TODO: Implement CSV handling. This should take the top level JSON keys as columns,
-	//       and then store for each element in the top level array the value as a flat string
-
-	// log every header we've written so far so we can append to that column,
-	// or create a new one if it does not yet exist
-	// var csvHeadersWriten []string
+	keySet := map[string]bool{}
 	for _, element := range elements {
-		v := reflect.ValueOf(element)
-		common.Print(fmt.Sprint(element))
-		common.Print(fmt.Sprint(v))
+		for k := range element {
+			keySet[k] = true
+		}
+	}
+	headers := make([]string, 0, len(keySet))
+	for k := range keySet {
+		headers = append(headers, k)
+	}
+	sort.Strings(headers)
+
+	w := csv.NewWriter(handle)
+	if err := w.Write(headers); err != nil {
+		common.ExitWithError(1, err)
+	}
+	for _, element := range elements {
+		row := make([]string, len(headers))
+		for i, k := range headers {
+			row[i] = csvCell(element[k])
+		}
+		if err := w.Write(row); err != nil {
+			common.ExitWithError(1, err)
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		common.ExitWithError(1, err)
+	}
+}
+
+func csvCell(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case map[string]interface{}, []interface{}:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return fmt.Sprint(t)
+		}
+		return string(b)
+	default:
+		return fmt.Sprint(t)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
 )
 
 func writeArrayToJsonFile(handle *os.File, elements []map[string]interface{}) {

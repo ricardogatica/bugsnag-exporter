@@ -3,29 +3,22 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 
-	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/xander-jones/bugsnag-exporter/pkg/common"
-	"github.com/xander-jones/bugsnag-exporter/pkg/daa"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/common"
+	"github.com/ricardogatica/bugsnag-exporter/pkg/daa"
 )
 
 func main() {
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       "575d0c15fae9fa9c865ede8258dea307",
-		AppVersion:   common.PackageVersion,
-		ReleaseStage: "development",
-		ProjectPackages: []string{
-			"main",
-			"github.com/xander-jones/bugsnag-exporter",
-			"github.com/xander-jones/bugsnag-exporter/common",
-			"github.com/xander-jones/bugsnag-exporter/daa",
-			"github.com/xander-jones/bugsnag-exporter/writers",
-		},
-		Synchronous: true,
-	})
+	// Sin bugsnag.Configure: la versión original reportaba sesiones/errores de
+	// esta herramienta al proyecto Bugsnag de su autor (API key hardcodeada).
 
-	token := flag.String("token", "", "[REQUIRED][String] Your Bugsnag personal auth token")
-	getProjectIds := flag.Bool("show-project-ids", false, "[Flag] Use this flag to get a list of project IDs accessible with your token. Overrides any other flags")
+	// Carga BUGSNAG_TOKEN (y otras variables) desde ./.env si existe. Las
+	// variables ya definidas en el entorno tienen prioridad.
+	common.LoadDotEnv(".env")
+
+	token := flag.String("token", "", "[String] Your Bugsnag personal auth token. Prefer the BUGSNAG_TOKEN env var (or .env): a flag stays in your shell history")
+	getProjectIds := flag.Bool("show-project-ids", false, "[Flag] List the project IDs accessible with your token (also the default when --project-id is missing)")
 	projectId := flag.String("project-id", "", "[String] The Project ID you wish to download from")
 	errorId := flag.String("error-id", "", "[String] An error ID to download. If provided, downloads all events within filters for this error ID")
 	events := flag.Bool("events", false, "[Flag] Download events rather than error groups when this flag is enabled. Requires --project-id (and optionally --error-id)")
@@ -37,6 +30,8 @@ func main() {
 	useCsv := flag.Bool("csv", false, "[Flag] Output data to file as CSV. Default false, noramally outputs as JSON")
 	noWarn := flag.Bool("no-warn", false, "[Flag] Don't warn me if this call will take more than 5 calls to the API")
 	verbose := flag.Bool("verbose", false, "[Flag] Set the output to be verbose for debugging purposes.")
+	since := flag.String("since", "", "[String] Only events since this time window or date, e.g. 7d, 24h, 2026-11-01T00:00:00Z (filter event.since)")
+	releaseStage := flag.String("release-stage", "", "[String] Only this release stage, e.g. production (filter app.release_stage)")
 	flag.Parse()
 
 	common.Verbose = *verbose
@@ -44,12 +39,19 @@ func main() {
 	common.UseCsv = *useCsv
 	common.OutputDir = *outputDir
 	common.MinimalReports = *minimalReports
+	common.Since = *since
+	common.ReleaseStage = *releaseStage
+
+	// Preferir la variable de entorno: un --token queda en el historial del shell.
+	if *token == "" {
+		*token = os.Getenv("BUGSNAG_TOKEN")
+	}
 
 	if *token == "" {
-		common.ExitWithString(1, "Missing token. Please supply Bugsnag personal auth token with --token flag")
+		common.ExitWithString(1, "Missing token. Use BUGSNAG_TOKEN or the --token flag")
 	} else {
 		daa.PersonalAuthToken = *token
-		if *getProjectIds {
+		if *getProjectIds || *projectId == "" {
 			common.Print("Getting your project IDs with provided token")
 			orgs := daa.GetUsersOrganizations()
 			for _, org := range orgs {

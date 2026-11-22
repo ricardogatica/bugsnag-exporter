@@ -1,6 +1,6 @@
 package daa
 
-import "github.com/xander-jones/bugsnag-exporter/pkg/common"
+import "github.com/ricardogatica/bugsnag-exporter/pkg/common"
 
 func GetOrganizationsProjects(organizationId string) []map[string]interface{} {
 	// Docs https://bugsnagapiv2.docs.apiary.io/#reference/projects/projects/list-an-organization's-projects

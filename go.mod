@@ -1,5 +1,3 @@
-module github.com/xander-jones/bugsnag-exporter
+module github.com/ricardogatica/bugsnag-exporter
 
-go 1.16
-
-require github.com/bugsnag/bugsnag-go/v2 v2.1.2
+go 1.21
